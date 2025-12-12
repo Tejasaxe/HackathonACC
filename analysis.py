@@ -110,6 +110,10 @@ def run_quant_analysis(data):
         "history": stock_df,
         "fundamentals": {
             "Free Cash Flow": f"${info.get('freeCashflow', 0)/1e9:.2f}B" if info.get('freeCashflow') else "N/A",
-            "Debt/Equity": round(info.get('debtToEquity', 0), 2) if info.get('debtToEquity') else "N/A"
+            "Debt/Equity": round(info.get('debtToEquity', 0), 2) if info.get('debtToEquity') else "N/A",
+            
+            # --- NEW METRICS (This fixes your error) ---
+            "Dividend Yield": f"{info.get('dividendYield', 0)*100:.2f}%" if info.get('dividendYield') else "0.00%",
+            "Revenue Growth": f"{info.get('revenueGrowth', 0)*100:.1f}%" if info.get('revenueGrowth') else "N/A"
         }
     }

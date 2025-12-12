@@ -14,7 +14,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- 2. DATA UNIVERSE (S&P 500 + Location Parsing) ---
+# --- 2. DATA UNIVERSE ---
 @st.cache_data
 def load_universe_data():
     try:
@@ -46,7 +46,6 @@ def load_analysis(ticker):
         return raw, run_quant_analysis(raw)
     return None, None
 
-# --- SMART SUMMARY GENERATOR ---
 def generate_smart_summary(info):
     name = info.get('shortName', 'The company')
     industry = info.get('industry', 'various sectors')
@@ -77,39 +76,55 @@ if st.session_state.selected_ticker is None:
     st.title("⚡ Market Terminal")
     st.caption("Select a company from the grid to launch deep analysis.")
 
-    # --- CASCADING FILTERS ---
+   # --- CASCADING FILTERS ---
     st.subheader("Filter Market")
     
-    available_sectors = sorted(df_universe['Sector'].dropna().unique())
+    # Create the 4 layout columns first
     c1, c2, c3, c4 = st.columns(4)
-    
+
+    # --- STEP 1: SECTOR ---
+    available_sectors = sorted(df_universe['Sector'].dropna().unique())
     with c1:
         selected_sectors = st.multiselect("Sector", options=available_sectors, placeholder="All Sectors")
-        df_step1 = df_universe[df_universe['Sector'].isin(selected_sectors)] if selected_sectors else df_universe
+    
+    # Calculate df_step1 immediately after input
+    if selected_sectors:
+        df_step1 = df_universe[df_universe['Sector'].isin(selected_sectors)]
+    else:
+        df_step1 = df_universe
 
+    # --- STEP 2: INDUSTRY ---
     available_industries = sorted(df_step1['Industry'].dropna().unique())
     with c2:
         selected_industries = st.multiselect("Industry", options=available_industries, placeholder="All Industries")
-        df_step2 = df_step1[df_step1['Industry'].isin(selected_industries)] if selected_industries else df_step1
+    
+    # Calculate df_step2 immediately
+    if selected_industries:
+        df_step2 = df_step1[df_step1['Industry'].isin(selected_industries)]
+    else:
+        df_step2 = df_step1
 
+    # --- STEP 3: STATE ---
     available_states = sorted(df_step2['State'].dropna().unique())
     with c3:
         selected_states = st.multiselect("State", options=available_states, placeholder="All States")
-        df_step3 = df_step2[df_step2['State'].isin(selected_states)] if selected_states else df_step2
+    
+    # Calculate df_step3 immediately
+    if selected_states:
+        df_step3 = df_step2[df_step2['State'].isin(selected_states)]
+    else:
+        df_step3 = df_step2
 
+    # --- STEP 4: CITY ---
     available_cities = sorted(df_step3['City'].dropna().unique())
     with c4:
         selected_cities = st.multiselect("City", options=available_cities, placeholder="All Cities")
-        filtered_df = df_step3[df_step3['City'].isin(selected_cities)] if selected_cities else df_step3
-
-    search_query = st.text_input("Search Ticker or Name", placeholder="e.g. Nvidia...")
-    if search_query:
-        filtered_df = filtered_df[
-            filtered_df['Ticker'].str.contains(search_query.upper()) | 
-            filtered_df['Name'].str.contains(search_query, case=False)
-        ]
-
-    st.markdown(f"**Found {len(filtered_df)} companies**")
+    
+    # Calculate Final Filtered Dataframe
+    if selected_cities:
+        filtered_df = df_step3[df_step3['City'].isin(selected_cities)]
+    else:
+        filtered_df = df_step3
     
     selection = st.dataframe(
         filtered_df,
@@ -156,15 +171,25 @@ else:
         metrics = analysis['metrics']
         val = analysis['valuation']
         
-        # --- SMART SUMMARY ---
+        # 1. SMART SUMMARY
         st.info(generate_smart_summary(info), icon="ℹ️")
 
-        # --- THE VERDICT (2 Columns) ---
+        # 2. KEY METRICS
+        st.subheader("📊 Key Metrics")
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Current Price", f"${info.get('currentPrice', 0):.2f}")
+        m2.metric("Beta (Risk)", metrics['Beta'], help="1.0 = Market Volatility")
+        m3.metric("CAPM Req. Return", metrics['Expected Return'])
+        m4.metric("Trend Signal", metrics['Signal'])
+        
+        st.divider()
+
+        # 3. THE VERDICT
         st.subheader("⚖️ The Verdict")
         
         v_col1, v_col2 = st.columns(2)
         
-        # 1. Recommendation
+        # Recommendation
         verdict_text = val['Verdict']
         if "BUY" in verdict_text: v_color = "normal" 
         elif "SELL" in verdict_text or "EXIT" in verdict_text: v_color = "inverse"
@@ -173,7 +198,7 @@ else:
         v_col1.metric("Recommendation", verdict_text, 
                       delta=metrics['Signal Desc'], delta_color=v_color)
         
-        # 2. Fair Value Gap
+        # Fair Value Gap
         upside_val = val['Upside'] * 100
         v_col2.metric("Fair Value Gap", f"{upside_val:.1f}%", 
                       help=f"Analyst Target: ${val['Target Price']}",
@@ -181,7 +206,7 @@ else:
 
         st.divider()
 
-        # --- PLOTLY CHART ---
+        # 4. CHART
         st.subheader("Technical Chart")
         hist = analysis['history'].tail(300)
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
@@ -208,38 +233,44 @@ else:
         )
         st.plotly_chart(fig, use_container_width=True)
 
-        # --- FUNDAMENTALS & METRICS ---
-        st.subheader("📚 Key Data")
+        # 5. FUNDAMENTAL DEEP DIVE (With New Growth Columns)
+        st.subheader("📚 Fundamental Deep Dive")
         
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Current Price", f"${info.get('currentPrice', 0):.2f}")
-        m2.metric("Beta (Risk)", metrics['Beta'], help="1.0 = Market Volatility")
-        m3.metric("CAPM Req. Return", metrics['Expected Return'])
-        m4.metric("Trend Signal", metrics['Signal'])
-
-        st.divider()
-
-        f_col1, f_col2 = st.columns(2)
+        f_col1, f_col2, f_col3 = st.columns(3)
+        
         with f_col1:
-            st.markdown("**Valuation**")
+            st.markdown("💰 **Valuation**")
             df_val = pd.DataFrame({
-                "Metric": ["Trailing P/E", "Forward P/E", "PEG Ratio", "Price/Book"],
+                "Metric": ["P/E Ratio", "Forward P/E", "PEG Ratio", "Price/Book"],
                 "Value": [info.get('trailingPE'), info.get('forwardPE'), info.get('pegRatio'), info.get('priceToBook')]
             })
             st.dataframe(df_val, hide_index=True, use_container_width=True)
             
         with f_col2:
-            st.markdown("**Financial Health**")
+            st.markdown("🏥 **Financial Health**")
             df_health = pd.DataFrame({
-                "Metric": ["Free Cash Flow", "Debt/Equity", "Return on Equity", "Profit Margin"],
+                "Metric": ["Debt/Equity", "Free Cash Flow", "Profit Margin", "ROE"],
                 "Value": [
-                    analysis['fundamentals']['Free Cash Flow'], 
                     analysis['fundamentals']['Debt/Equity'],
-                    f"{info.get('returnOnEquity', 0)*100:.2f}%" if info.get('returnOnEquity') else "N/A",
-                    f"{info.get('profitMargins', 0)*100:.2f}%" if info.get('profitMargins') else "N/A"
+                    analysis['fundamentals']['Free Cash Flow'], 
+                    f"{info.get('profitMargins', 0)*100:.2f}%" if info.get('profitMargins') else "N/A",
+                    f"{info.get('returnOnEquity', 0)*100:.2f}%" if info.get('returnOnEquity') else "N/A"
                 ]
             })
             st.dataframe(df_health, hide_index=True, use_container_width=True)
+
+        with f_col3:
+            st.markdown("🚀 **Growth & Income**")
+            df_growth = pd.DataFrame({
+                "Metric": ["Revenue Growth (YoY)", "Earnings Growth", "Dividend Yield", "Payout Ratio"],
+                "Value": [
+                    analysis['fundamentals']['Revenue Growth'],
+                    f"{info.get('earningsGrowth', 0)*100:.1f}%" if info.get('earningsGrowth') else "N/A",
+                    analysis['fundamentals']['Dividend Yield'],
+                    f"{info.get('payoutRatio', 0)*100:.1f}%" if info.get('payoutRatio') else "N/A"
+                ]
+            })
+            st.dataframe(df_growth, hide_index=True, use_container_width=True)
 
     else:
         st.error("Could not fetch data. The ticker might be delisted or API is busy.")
