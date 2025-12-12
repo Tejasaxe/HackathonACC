@@ -1,117 +1,201 @@
 import streamlit as st
 import pandas as pd
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
 # IMPORT YOUR MODULES
 from fetch_data import get_raw_data
 from analysis import run_quant_analysis
 
-st.set_page_config(page_title="Vibe Coding Dashboard", layout="centered")
+# --- 1. SETUP: PROFESSIONAL UI CONFIG ---
+st.set_page_config(
+    page_title="Quant Vibe Terminal", 
+    layout="wide",  # Use full screen width
+    initial_sidebar_state="expanded"
+)
 
-# --- CONFIGURATION & CACHING ---
-# We wrap the data fetching in cache so navigating doesn't re-download everything
+# --- 2. DATA SOURCE: THE "UNIVERSE" ---
+@st.cache_data
+def load_sp500_tickers():
+    """
+    Fetches a live list of S&P 500 companies from Wikipedia/GitHub.
+    """
+    try:
+        url = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/master/data/constituents.csv"
+        df = pd.read_csv(url)
+        
+        # FIX: The CSV uses "GICS Sector", so we rename it to just "Sector"
+        # to match the rest of our code.
+        if 'GICS Sector' in df.columns:
+            df.rename(columns={'GICS Sector': 'Sector'}, inplace=True)
+            
+        return df
+    except Exception as e:
+        st.error(f"Error loading data: {e}")
+        # Fallback data so the app doesn't crash
+        return pd.DataFrame([
+            {"Symbol": "AAPL", "Name": "Apple Inc.", "Sector": "Information Technology"},
+            {"Symbol": "MSFT", "Name": "Microsoft Corp", "Sector": "Information Technology"},
+            {"Symbol": "NVDA", "Name": "NVIDIA Corp", "Sector": "Information Technology"},
+        ])
+
 @st.cache_data
 def load_data(ticker):
     raw_data = get_raw_data(ticker)
     if raw_data:
-        # Run the analysis immediately after fetching
         analysis = run_quant_analysis(raw_data)
         return raw_data, analysis
     return None, None
 
-# --- LIST OF COMPANIES ---
-TOP_10_COMPANIES = [
-    {"ticker": "AAPL", "name": "Apple Inc."},
-    {"ticker": "MSFT", "name": "Microsoft Corp."},
-    {"ticker": "NVDA", "name": "NVIDIA Corp."},
-    {"ticker": "GOOGL", "name": "Alphabet Inc."},
-    {"ticker": "AMZN", "name": "Amazon.com Inc."},
-    {"ticker": "META", "name": "Meta Platforms"},
-    {"ticker": "TSLA", "name": "Tesla, Inc."},
-    {"ticker": "BRK-B", "name": "Berkshire Hathaway"},
-    {"ticker": "LLY", "name": "Eli Lilly and Co."},
-    {"ticker": "AVGO", "name": "Broadcom Inc."}
-]
-
-# --- APP LOGIC ---
+# --- 3. STATE MANAGEMENT ---
 if 'selected_ticker' not in st.session_state:
     st.session_state.selected_ticker = None
 
-def go_back():
-    st.session_state.selected_ticker = None
+# --- 4. SIDEBAR: FILTERS & NAVIGATION ---
+st.sidebar.title("🔍 Market Screener")
 
-def select_company(ticker):
-    st.session_state.selected_ticker = ticker
+# Load the "Universe"
+df_tickers = load_sp500_tickers()
 
-# --- PAGE 1: LIST VIEW ---
+# Feature: Filter by Sector
+all_sectors = sorted(df_tickers['Sector'].unique().tolist())
+selected_sector = st.sidebar.selectbox("Filter by Sector", ["All"] + all_sectors)
+
+# Apply Filter
+if selected_sector != "All":
+    filtered_df = df_tickers[df_tickers['Sector'] == selected_sector]
+else:
+    filtered_df = df_tickers
+
+# --- 5. MAIN PAGE LOGIC ---
+
+# === VIEW 1: THE SCREENER (List of Companies) ===
 if st.session_state.selected_ticker is None:
-    st.title("📈 Market Vibe Check")
-    st.write("Pick a company to analyze:")
+    st.title("🌎 Market Universe")
+    st.markdown("Select a company to launch the **Deep Dive Analysis**.")
+
+    # PROFESSIONAL TABLE
+    # st.dataframe allows built-in Sorting (click headers) and Search (Cmd+F)
+    # We add a 'Select' mechanism
     
-    for company in TOP_10_COMPANIES:
-        if st.button(f"🔍 {company['name']} ({company['ticker']})", use_container_width=True):
-            select_company(company['ticker'])
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.dataframe(
+            filtered_df, 
+            use_container_width=True, 
+            height=600,
+            hide_index=True
+        )
+    with col2:
+        st.info("👆 Use the table to find a Ticker.")
+        st.write("### Quick Select")
+        # Dropdown to actually pick the stock
+        ticker_input = st.selectbox("Choose Ticker to Analyze:", filtered_df['Symbol'].tolist())
+        
+        if st.button("🚀 Launch Analysis", type="primary"):
+            st.session_state.selected_ticker = ticker_input
             st.rerun()
 
-# --- PAGE 2: DETAIL VIEW ---
+# === VIEW 2: THE DASHBOARD (Detail View) ===
 else:
     ticker = st.session_state.selected_ticker
     
-    if st.button("← Back to List"):
-        go_back()
-        st.rerun()
+    # Navigation Header
+    col_nav1, col_nav2 = st.columns([1, 10])
+    with col_nav1:
+        if st.button("⬅ List"):
+            st.session_state.selected_ticker = None
+            st.rerun()
+    with col_nav2:
+        st.markdown(f"## {ticker} Analysis")
 
-    with st.spinner(f"Fetching data for {ticker}..."):
-        # Load both raw data and the calculated analysis
+    with st.spinner(f"Crunching numbers for {ticker}..."):
         raw_data, analysis = load_data(ticker)
 
     if raw_data and analysis:
-        # Extract basic info for the header
         info = raw_data['info']
-        name = info.get('shortName', ticker)
-        current_price = info.get('currentPrice', 0)
-        sector = info.get('sector', 'Unknown')
         
-        st.title(f"{name} ({ticker})")
-        
-        # --- SECTION 1: HEADER METRICS ---
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Price", f"${current_price:.2f}")
-        c2.metric("P/E Ratio", f"{info.get('trailingPE', 'N/A')}")
-        c3.metric("Sector", sector)
+        # --- HERO SECTION (Price & Vibe) ---
+        # Using a container to group the top level metrics with a background
+        with st.container():
+            kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
+            
+            # Helper for color formatting
+            def color_val(val):
+                return "green" if val > 0 else "red"
+
+            kpi1.metric("Current Price", f"${info.get('currentPrice', 0):.2f}")
+            kpi2.metric("Market Cap", f"${info.get('marketCap', 0)/1e9:.1f}B")
+            kpi3.metric("Beta (Risk)", analysis['metrics']['Beta'])
+            kpi4.metric("CAPM Exp. Return", analysis['metrics']['Expected Return (CAPM)'])
+            kpi5.metric("Vibe Signal", analysis['metrics']['Signal'])
 
         st.divider()
 
-        # --- SECTION 2: QUANT SCORECARD (The New Analysis) ---
-        st.subheader("⚡ Quant Scorecard")
+        # --- ADVANCED CHARTING (Plotly) ---
+        # We switch to Plotly for the "Blue Line" and Pro look
         
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Beta", analysis['metrics']['Beta'], help=">1 means volatile")
-        m2.metric("Volatility", analysis['metrics']['Volatility (Ann.)'])
-        m3.metric("CAPM Return", analysis['metrics']['Expected Return (CAPM)'])
-        m4.metric("Signal", analysis['metrics']['Signal'])
+        # Create a subplot with 2 rows (Price on top, Volume/RSI potential on bottom)
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
+                            vertical_spacing=0.05, row_heights=[0.7, 0.3])
 
-        st.divider()
-
-        # --- SECTION 3: TECHNICAL CHART (SMA) ---
-        st.subheader("Technical Analysis")
-        st.caption("White: Price | Green: SMA-50 | Red: SMA-200")
+        # 1. Candlestick Chart (Real Pro Mode) - OR Simple Blue Line as requested
+        # Let's do the Blue Line but make it look premium
+        history = analysis['history'].tail(252) # Last year
         
-        # Prepare data for plotting
-        # We slice the last 1 year to keep the chart readable
-        chart_df = analysis['history'][['Close', 'SMA_50', 'SMA_200']].tail(252)
-        st.line_chart(chart_df, color=["#ffffff", "#00ff00", "#ff0000"]) 
+        fig.add_trace(go.Scatter(
+            x=history.index, 
+            y=history['Close'], 
+            name='Price',
+            line=dict(color='#0096FF', width=2) # <--- THE BLUE COLOR YOU WANTED
+        ), row=1, col=1)
 
-        st.divider()
+        # 2. Add SMAs
+        fig.add_trace(go.Scatter(
+            x=history.index, y=history['SMA_50'], name='SMA 50',
+            line=dict(color='orange', width=1)
+        ), row=1, col=1)
+        fig.add_trace(go.Scatter(
+            x=history.index, y=history['SMA_200'], name='SMA 200',
+            line=dict(color='gray', width=1, dash='dot')
+        ), row=1, col=1)
 
-        # --- SECTION 4: FUNDAMENTALS ---
-        st.subheader("Fundamental Health")
-        f1, f2 = st.columns(2)
-        f1.metric("Free Cash Flow", analysis['fundamentals']['Free Cash Flow'])
-        f2.metric("Debt/Equity Ratio", analysis['fundamentals']['Debt/Equity Ratio'])
+        # 3. Volume Bar Chart
+        fig.add_trace(go.Bar(
+            x=history.index, y=history['Volume'], name='Volume',
+            marker_color='rgba(200, 200, 200, 0.5)'
+        ), row=2, col=1)
 
-        # --- SECTION 5: SUMMARY ---
-        st.divider()
-        st.subheader("About")
-        st.info(info.get('longBusinessSummary', "No summary available."))
+        # Layout Update
+        fig.update_layout(
+            title=f"{ticker} Price Action & Technicals",
+            xaxis_rangeslider_visible=False,
+            height=600,
+            template="plotly_dark", # <--- DARK MODE CHART
+            margin=dict(l=20, r=20, t=50, b=20)
+        )
         
+        st.plotly_chart(fig, use_container_width=True)
+
+        # --- FUNDAMENTALS & INFO ---
+        col_fund1, col_fund2 = st.columns(2)
+        
+        with col_fund1:
+            st.subheader("📊 Fundamental Health")
+            df_fund = pd.DataFrame([
+                {"Metric": "Trailing P/E", "Value": info.get('trailingPE')},
+                {"Metric": "Forward P/E", "Value": info.get('forwardPE')},
+                {"Metric": "PEG Ratio", "Value": info.get('pegRatio')},
+                {"Metric": "Debt/Equity", "Value": analysis['fundamentals']['Debt/Equity Ratio']},
+                {"Metric": "Free Cash Flow", "Value": analysis['fundamentals']['Free Cash Flow']},
+            ])
+            st.dataframe(df_fund, hide_index=True, use_container_width=True)
+
+        with col_fund2:
+            st.subheader("🏢 Company Profile")
+            st.write(f"**Sector:** {info.get('sector')}")
+            st.write(f"**Industry:** {info.get('industry')}")
+            st.caption(info.get('longBusinessSummary', "No summary available."))
+
     else:
-        st.error("Could not fetch data for this company. It might be delisted or the API is down.")
+        st.error("Data unavailable. Please check the ticker.")
