@@ -8,48 +8,52 @@ from fetch_data import get_raw_data
 from analysis import run_quant_analysis
 from ai_insights import get_ai_long_term_analysis, fetch_raw_news, analyze_news_sentiment
 
-# --- 1. SETUP: PROFESSIONAL UI CONFIG ---
+# --- 1. SETUP: NORMAL CONFIG ---
 st.set_page_config(
     page_title="Quant Vibe Terminal", 
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# --- 2. DATA UNIVERSE (LOCAL FILES) ---
+# --- 2. DATA UNIVERSE (COMBINED) ---
 @st.cache_data
-def load_universe_data(market_choice):
+def load_combined_universe():
     """
-    Loads ticker data from local CSV files.
+    Loads US and EU stocks into one master dataframe.
     """
-    # Map the dropdown selection to your file names
-    files = {
-        "🇺🇸 S&P 500 (USA)": "sp500.csv",
-        "🇪🇺 STOXX 50 (Europe)": "stoxx50.csv",
-        "🇮🇳 Nifty 50 (India)": "nifty50.csv",
-    }
+    master_df = pd.DataFrame()
     
-    filename = files.get(market_choice)
-    if not filename: return pd.DataFrame()
-
+    # 1. Load USA (S&P 500)
     try:
-        # Read the local CSV file
-        df = pd.read_csv(filename)
-        
-        # Ensure we have "City" and "State" columns (fill with N/A if missing)
-        if "City" not in df.columns: df["City"] = "N/A"
-        if "State" not in df.columns: df["State"] = "N/A"
-        
-        # Clean Tickers (remove any accidental whitespace)
-        df['Ticker'] = df['Ticker'].str.strip()
-        
-        return df
+        us_df = pd.read_csv("sp500.csv")
+        us_df['Market'] = "🇺🇸 USA (S&P 500)"
+        master_df = pd.concat([master_df, us_df], ignore_index=True)
+    except:
+        pass 
 
-    except FileNotFoundError:
-        st.error(f"Missing File: {filename}. Please download the CSV and place it in the app folder.")
-        return pd.DataFrame()
-    except Exception as e:
-        st.error(f"Error loading {filename}: {e}")
-        return pd.DataFrame()
+    # 2. Load Europe (STOXX 600)
+    try:
+        eu_df = pd.read_csv("stoxx600.csv")
+        eu_df['Market'] = "🇪🇺 Europe (STOXX 600)"
+        master_df = pd.concat([master_df, eu_df], ignore_index=True)
+    except:
+        pass
+
+    # 3. Load Custom (Optional)
+    try:
+        custom_df = pd.read_csv("my_portfolio.csv")
+        custom_df['Market'] = "📁 Custom Portfolio"
+        master_df = pd.concat([master_df, custom_df], ignore_index=True)
+    except:
+        pass
+
+    if not master_df.empty:
+        # Standard cleaning
+        if "City" not in master_df.columns: master_df["City"] = "N/A"
+        if "State" not in master_df.columns: master_df["State"] = "N/A"
+        master_df['Ticker'] = master_df['Ticker'].str.strip()
+        
+    return master_df
 
 @st.cache_data
 def load_analysis(ticker):
@@ -73,70 +77,90 @@ def generate_smart_summary(info):
 
 # --- 3. MAIN LOGIC ---
 
-# --- SIDEBAR: SETTINGS ---
+# --- SIDEBAR: API KEY ONLY ---
 with st.sidebar:
     st.header("⚙️ Settings")
-    
-    # Market Selector
-    market_choice = st.selectbox(
-        "🌍 Market Universe", 
-        ["🇺🇸 S&P 500 (USA)", "🇪🇺 STOXX 50 (Europe)", "🇮🇳 Nifty 50 (India)"]
-    )
-    
-    st.divider()
-    
     groq_key = st.text_input("Groq API Key", type="password", help="Get it free at console.groq.com")
     st.caption("Powered by Llama 3 via Groq ⚡")
 
-# Load Data based on selection
-df_universe = load_universe_data(market_choice)
+# Load Everything Once
+df_universe = load_combined_universe()
 
 if 'selected_ticker' not in st.session_state:
     st.session_state.selected_ticker = None
 
-# --- VIEW 1: SEARCH GRID ---
+# --- VIEW 1: UNIFIED SEARCH GRID ---
 if st.session_state.selected_ticker is None:
-    st.title(f"⚡ Market Terminal: {market_choice}")
-    st.caption("Select a company from the grid to launch deep analysis.")
+    st.title("⚡ Global Market Terminal")
+    st.caption(f"Tracking {len(df_universe)} companies across US & Europe.")
 
-    # --- FILTERS (Dynamic) ---
+    # --- TOP ROW FILTERS (Name -> Sector -> Industry -> Region) ---
     st.subheader("Filter Market")
     
-    # Check if sectors exist in this dataset
-    has_sectors = "Sector" in df_universe.columns and df_universe['Sector'].iloc[0] != "N/A"
+    c1, c2, c3, c4 = st.columns(4)
+
+    # 1. SEARCH (NAME)
+    with c1:
+        search_query = st.text_input("Search", placeholder="Ticker or Name...")
+
+    # 2. SECTOR
+    available_sectors = sorted(df_universe['Sector'].astype(str).unique())
+    with c2:
+        selected_sectors = st.multiselect("Sector", options=available_sectors, placeholder="All Sectors")
     
-    if has_sectors:
-        c1, c2, c3, c4 = st.columns(4)
-        available_sectors = sorted(df_universe['Sector'].dropna().unique())
-        with c1: selected_sectors = st.multiselect("Sector", options=available_sectors, placeholder="All Sectors")
-        df_step1 = df_universe[df_universe['Sector'].isin(selected_sectors)] if selected_sectors else df_universe
-
-        available_industries = sorted(df_step1['Industry'].dropna().unique())
-        with c2: selected_industries = st.multiselect("Industry", options=available_industries, placeholder="All Industries")
-        filtered_df = df_step1[df_step1['Industry'].isin(selected_industries)] if selected_industries else df_step1
+    # Calculate intermediate DF for Industry dropdown options
+    if selected_sectors:
+        df_step1 = df_universe[df_universe['Sector'].isin(selected_sectors)]
     else:
-        filtered_df = df_universe
+        df_step1 = df_universe
 
-    # Search
-    search_query = st.text_input("Search Ticker or Name", placeholder="e.g. Reliance, SAP, Tencent...")
+    # 3. INDUSTRY
+    available_industries = sorted(df_step1['Industry'].astype(str).unique())
+    with c3:
+        selected_industries = st.multiselect("Industry", options=available_industries, placeholder="All Industries")
+
+    # Calculate intermediate DF for Market dropdown options
+    if selected_industries:
+        df_step2 = df_step1[df_step1['Industry'].isin(selected_industries)]
+    else:
+        df_step2 = df_step1
+
+    # 4. REGION (MARKET)
+    available_markets = sorted(df_step2['Market'].unique())
+    with c4:
+        selected_markets = st.multiselect("Region", options=available_markets, placeholder="All Markets")
+
+    # --- APPLY FILTERS LOGIC ---
+    filtered_df = df_universe
+
+    if selected_sectors:
+        filtered_df = filtered_df[filtered_df['Sector'].isin(selected_sectors)]
+    
+    if selected_industries:
+        filtered_df = filtered_df[filtered_df['Industry'].isin(selected_industries)]
+        
+    if selected_markets:
+        filtered_df = filtered_df[filtered_df['Market'].isin(selected_markets)]
+
     if search_query:
         filtered_df = filtered_df[
             filtered_df['Ticker'].str.contains(search_query.upper()) | 
             filtered_df['Name'].str.contains(search_query, case=False)
         ]
 
-    st.markdown(f"**Found {len(filtered_df)} companies**")
+    # --- DATA TABLE ---
+    st.markdown(f"**Showing {len(filtered_df)} companies**")
     
     selection = st.dataframe(
         filtered_df,
-        column_order=["Ticker", "Name", "Sector", "Industry", "City", "State"],
+        column_order=["Ticker", "Name", "Sector", "Industry", "Market", "City"],
         column_config={
             "Ticker": st.column_config.TextColumn("Ticker", width="small"),
             "Name": st.column_config.TextColumn("Name", width="medium"),
             "Sector": st.column_config.TextColumn("Sector", width="medium"),
             "Industry": st.column_config.TextColumn("Industry", width="medium"),
+            "Market": st.column_config.TextColumn("Region", width="medium"),
             "City": st.column_config.TextColumn("City", width="small"),
-            "State": st.column_config.TextColumn("State", width="small"),
         },
         use_container_width=True, hide_index=True, height=500, on_select="rerun", selection_mode="single-row"
     )
@@ -145,7 +169,7 @@ if st.session_state.selected_ticker is None:
         st.session_state.selected_ticker = filtered_df.iloc[selection.selection.rows[0]]['Ticker']
         st.rerun()
 
-# --- VIEW 2: DASHBOARD ---
+# --- VIEW 2: DASHBOARD (UNCHANGED LOGIC) ---
 else:
     ticker = st.session_state.selected_ticker
     
