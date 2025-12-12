@@ -16,10 +16,10 @@ def get_raw_data(ticker_symbol):
     try:
         stock = yf.Ticker(ticker_symbol)
         
-        # 1. Price History (5 Years for Time Machine)
-        # We allow a fallback if 5y fails, we try 1y
+        # 1. Price History
+        # We try to fetch 2 years of history for the chart and calculations
         try:
-            stock_history = stock.history(period="5y")
+            stock_history = stock.history(period="2y")
             if stock_history.empty:
                 print(f"Warning: No history found for {ticker_symbol}")
                 return None
@@ -30,7 +30,7 @@ def get_raw_data(ticker_symbol):
         # 2. Market History (SPY) for Benchmarking (CAPM)
         try:
             spy = yf.Ticker("SPY")
-            market_history = spy.history(period="5y")
+            market_history = spy.history(period="2y")
         except Exception as e:
             print(f"Warning: Could not fetch SPY data ({e}). CAPM will be approximate.")
             # Create dummy market data if SPY fails so app doesn't crash
