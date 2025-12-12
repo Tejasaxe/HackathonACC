@@ -16,36 +16,57 @@ def run_quant_analysis(data):
     prices = pd.DataFrame({'Stock': stock_df['Close'], 'Market': market_df['Close']}).dropna()
     returns = prices.pct_change().dropna()
     
+    # Beta Calculation
     cov = returns.cov()
-    beta = cov.loc['Stock', 'Market'] / returns['Market'].var()
+    if not returns.empty:
+        beta = cov.loc['Stock', 'Market'] / returns['Market'].var()
+        volatility = returns['Stock'].std() * np.sqrt(252)
+    else:
+        beta = 1.0
+        volatility = 0.20
     
-    # CAPM Formula: R = Rf + Beta * (Rm - Rf)
-    rf = 0.045  # 4.5% Risk Free Rate (approx 10y Treasury)
-    rm = 0.10   # 10% Expected Market Return
+    # CAPM Formula
+    rf = 0.045
+    rm = 0.10
     expected_return = rf + beta * (rm - rf)
-    
-    volatility = returns['Stock'].std() * np.sqrt(252)
 
-    # --- 2. TECHNICAL SIGNALS ---
+    # --- 2. TECHNICAL SIGNALS (THE FIX) ---
     stock_df['SMA_50'] = stock_df['Close'].rolling(window=50).mean()
     stock_df['SMA_200'] = stock_df['Close'].rolling(window=200).mean()
     
+    # Get latest values
     curr_price = stock_df['Close'].iloc[-1]
     sma_50 = stock_df['SMA_50'].iloc[-1]
     sma_200 = stock_df['SMA_200'].iloc[-1]
     
-    # Vibe Signal Logic
-    if sma_50 > sma_200:
-        trend = "BULLISH"
-        trend_desc = "Uptrend (Green > Red)"
-    else:
-        trend = "BEARISH"
-        trend_desc = "Downtrend (Green < Red)"
-
-    # --- 3. VALUATION (Price vs Expected) ---
-    target_price = info.get('targetMeanPrice')
+    # --- NEW "SMART" LOGIC ---
+    # We check the relationship between Price, Fast Avg (50), and Slow Avg (200)
     
-    # If no analyst target, assume fair value is current price (neutral)
+    trend = "NEUTRAL"
+    trend_desc = "Consolidating"
+    
+    # Scenario 1: Golden Cross AND Price is supported (Best Case)
+    if sma_50 > sma_200 and curr_price > sma_50:
+        trend = "BULLISH"
+        trend_desc = "Strong Uptrend (Price > Green > Red)"
+        
+    # Scenario 2: Golden Cross BUT Price is falling (The "Trap" you saw)
+    elif sma_50 > sma_200 and curr_price < sma_50:
+        trend = "WEAKENING"
+        trend_desc = "Caution: Price dropped below Green"
+        
+    # Scenario 3: Death Cross AND Price is falling (Worst Case)
+    elif sma_50 < sma_200 and curr_price < sma_50:
+        trend = "BEARISH"
+        trend_desc = "Strong Downtrend (Price < Green < Red)"
+        
+    # Scenario 4: Death Cross BUT Price is rallying (Early Reversal)
+    elif sma_50 < sma_200 and curr_price > sma_50:
+        trend = "RECOVERY"
+        trend_desc = "Watch: Price reclaimed Green line"
+
+    # --- 3. VALUATION ---
+    target_price = info.get('targetMeanPrice')
     if target_price:
         upside = (target_price - curr_price) / curr_price
     else:
@@ -53,34 +74,27 @@ def run_quant_analysis(data):
         upside = 0
 
     # --- 4. THE VERDICT (Long/Short/Hold) ---
-    # Logic: Combine Technicals (Trend) + Fundamentals (Valuation)
-    
     verdict = "HOLD"
-    color = "yellow"
     
-    if trend == "BULLISH" and upside > 0.10:
-        verdict = "LONG (BUY)" # Rising trend + Cheap
-        color = "green"
-    elif trend == "BEARISH" and upside < -0.10:
-        verdict = "SHORT (SELL)" # Falling trend + Expensive
-        color = "red"
-    elif trend == "BULLISH":
-        verdict = "WATCH (Momentum Up)"
-        color = "blue"
+    # Logic: Only BUY if Trend is BULLISH or RECOVERY (with value)
+    if trend == "BULLISH" and upside > 0:
+        verdict = "LONG (BUY)"
     elif trend == "BEARISH":
-        verdict = "AVOID (Momentum Down)"
-        color = "orange"
+        verdict = "SHORT (SELL)"
+    elif trend == "WEAKENING":
+        verdict = "EXIT / CAUTION"  # Get out before it drops more
+    elif trend == "RECOVERY":
+        verdict = "WATCH FOR ENTRY"
 
-    # --- 5. POSITION SIZING (Money Management) ---
-    # Rule of Thumb: Lower Volatility = Higher Allocation
+    # --- 5. POSITION SIZING ---
     if volatility < 0.20:
-        allocation = "High (5-7%)" # Safe stock (e.g. Coke)
+        allocation = "High (5-7%)"
     elif volatility < 0.40:
-        allocation = "Medium (3-5%)" # Standard stock (e.g. Apple)
+        allocation = "Medium (3-5%)"
     elif volatility < 0.60:
-        allocation = "Low (1-2%)" # Risky (e.g. Tesla)
+        allocation = "Low (1-2%)"
     else:
-        allocation = "Speculative (<1%)" # Crypto/Penny stocks
+        allocation = "Speculative (<1%)"
 
     return {
         "metrics": {
@@ -93,9 +107,8 @@ def run_quant_analysis(data):
         "valuation": {
             "Current Price": curr_price,
             "Target Price": target_price,
-            "Upside": upside,  # float (e.g. 0.15 for 15%)
+            "Upside": upside,
             "Verdict": verdict,
-            "Verdict Color": color,
             "Allocation": allocation
         },
         "history": stock_df,

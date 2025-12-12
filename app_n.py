@@ -166,25 +166,29 @@ else:
         # --- SMART SUMMARY ---
         st.info(generate_smart_summary(info), icon="ℹ️")
 
-        # --- THE VERDICT (New Section) ---
-        # We create a highlighted box for the final decision
-        st.subheader("🤖 The Robo-Verdict")
+        # --- THE VERDICT ---
+        st.subheader("The Verdict")
         
         v_col1, v_col2, v_col3 = st.columns(3)
         
-        # 1. Action
-        v_col1.metric("Recommendation", val['Verdict'], 
-                      delta=metrics['Signal Desc'], delta_color="off")
+        # Dynamic Color Logic for the Verdict
+        verdict_text = val['Verdict']
+        if "BUY" in verdict_text:
+            v_color = "normal" # Greenish in Streamlit default
+        elif "SELL" in verdict_text or "EXIT" in verdict_text:
+            v_color = "inverse" # Reddish
+        else:
+            v_color = "off" # Grey/Neutral
+
+        v_col1.metric("Recommendation", verdict_text, 
+                      delta=metrics['Signal Desc'], delta_color=v_color)
         
-        # 2. Valuation Gap
         upside_val = val['Upside'] * 100
         v_col2.metric("Fair Value Gap", f"{upside_val:.1f}%", 
                       help=f"Analyst Target: ${val['Target Price']}",
                       delta="Undervalued" if upside_val > 0 else "Overvalued")
         
-        # 3. Money Management
-        v_col3.metric("Recommended Size", val['Allocation'], 
-                      help="Based on Asset Volatility. Lower Volatility = Higher Size.")
+        v_col3.metric("Recommended Size", val['Allocation'])
 
         st.divider()
 
