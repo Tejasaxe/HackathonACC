@@ -1,14 +1,21 @@
 import streamlit as st
-# IMPORT YOUR FILE HERE
-from fetch_data import get_company_details 
+import pandas as pd
+# IMPORT YOUR MODULES
+from fetch_data import get_raw_data
+from analysis import run_quant_analysis
 
 st.set_page_config(page_title="Vibe Coding Dashboard", layout="centered")
 
 # --- CONFIGURATION & CACHING ---
-# We wrap your function with Streamlit's cache so it's fast
+# We wrap the data fetching in cache so navigating doesn't re-download everything
 @st.cache_data
 def load_data(ticker):
-    return get_company_details(ticker)
+    raw_data = get_raw_data(ticker)
+    if raw_data:
+        # Run the analysis immediately after fetching
+        analysis = run_quant_analysis(raw_data)
+        return raw_data, analysis
+    return None, None
 
 # --- LIST OF COMPANIES ---
 TOP_10_COMPANIES = [
@@ -53,25 +60,58 @@ else:
         st.rerun()
 
     with st.spinner(f"Fetching data for {ticker}..."):
-        # CALL YOUR IMPORTED FUNCTION HERE
-        data = load_data(ticker)
+        # Load both raw data and the calculated analysis
+        raw_data, analysis = load_data(ticker)
 
-    if data:
-        st.title(f"{data['name']} ({data['symbol']})")
+    if raw_data and analysis:
+        # Extract basic info for the header
+        info = raw_data['info']
+        name = info.get('shortName', ticker)
+        current_price = info.get('currentPrice', 0)
+        sector = info.get('sector', 'Unknown')
         
-        # Metrics
+        st.title(f"{name} ({ticker})")
+        
+        # --- SECTION 1: HEADER METRICS ---
         c1, c2, c3 = st.columns(3)
-        c1.metric("Price", f"${data['current_price']:.2f}")
-        c2.metric("P/E", f"{data['pe_ratio']}" if data['pe_ratio'] else "N/A")
-        c3.metric("Sector", data['sector'])
+        c1.metric("Price", f"${current_price:.2f}")
+        c2.metric("P/E Ratio", f"{info.get('trailingPE', 'N/A')}")
+        c3.metric("Sector", sector)
 
         st.divider()
 
-        # Chart
-        st.subheader("Price History")
-        st.line_chart(data['history']['Close'])
+        # --- SECTION 2: QUANT SCORECARD (The New Analysis) ---
+        st.subheader("⚡ Quant Scorecard")
+        
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Beta", analysis['metrics']['Beta'], help=">1 means volatile")
+        m2.metric("Volatility", analysis['metrics']['Volatility (Ann.)'])
+        m3.metric("CAPM Return", analysis['metrics']['Expected Return (CAPM)'])
+        m4.metric("Signal", analysis['metrics']['Signal'])
 
-        # Summary
-        st.info(data['summary'])
+        st.divider()
+
+        # --- SECTION 3: TECHNICAL CHART (SMA) ---
+        st.subheader("Technical Analysis")
+        st.caption("White: Price | Green: SMA-50 | Red: SMA-200")
+        
+        # Prepare data for plotting
+        # We slice the last 1 year to keep the chart readable
+        chart_df = analysis['history'][['Close', 'SMA_50', 'SMA_200']].tail(252)
+        st.line_chart(chart_df, color=["#ffffff", "#00ff00", "#ff0000"]) 
+
+        st.divider()
+
+        # --- SECTION 4: FUNDAMENTALS ---
+        st.subheader("Fundamental Health")
+        f1, f2 = st.columns(2)
+        f1.metric("Free Cash Flow", analysis['fundamentals']['Free Cash Flow'])
+        f2.metric("Debt/Equity Ratio", analysis['fundamentals']['Debt/Equity Ratio'])
+
+        # --- SECTION 5: SUMMARY ---
+        st.divider()
+        st.subheader("About")
+        st.info(info.get('longBusinessSummary', "No summary available."))
+        
     else:
-        st.error("Could not fetch data for this company.")
+        st.error("Could not fetch data for this company. It might be delisted or the API is down.")

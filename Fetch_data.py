@@ -1,36 +1,40 @@
 import yfinance as yf
 import pandas as pd
 
-def get_company_details(ticker_symbol):
+def get_raw_data(ticker_symbol):
     """
-    Fetches all data needed for the dashboard.
-    Returns a dictionary or None if error.
+    Fetches raw dataframes for the stock and the market (SPY).
     """
     try:
-        # 1. Fetch Ticker
         stock = yf.Ticker(ticker_symbol)
+        
+        # 1. Price History (Extended to 2y for better Beta calculation)
+        stock_history = stock.history(period="2y")
+        
+        # 2. Market History (SPY) for Benchmarking
+        spy = yf.Ticker("SPY")
+        market_history = spy.history(period="2y")
+        
+        # 3. Financial Statements
+        balance_sheet = stock.balance_sheet
+        cash_flow = stock.cashflow
+        income_stmt = stock.financials
+        
+        # 4. Basic Info
         info = stock.info
-        
-        # 2. Fetch History (1 Year)
-        history = stock.history(period="1y")
-        
-        # 3. Handle Missing Data gracefully
-        if history.empty:
+
+        if stock_history.empty:
             return None
 
-        # 4. Construct the Data Package
-        data_package = {
-            "symbol": ticker_symbol.upper(),
-            "name": info.get('longName', ticker_symbol),
-            "current_price": info.get('currentPrice', history['Close'].iloc[-1]), # Fallback to last close
-            "pe_ratio": info.get('trailingPE'),
-            "sector": info.get('sector', "Unknown"),
-            "summary": info.get('longBusinessSummary', "No summary available."),
-            "history": history
+        return {
+            "symbol": ticker_symbol,
+            "info": info,
+            "stock_history": stock_history,
+            "market_history": market_history,
+            "balance_sheet": balance_sheet,
+            "cash_flow": cash_flow,
+            "income_stmt": income_stmt
         }
-        
-        return data_package
-
     except Exception as e:
-        print(f"Error fetching data: {e}")
+        print(f"Error: {e}")
         return None
