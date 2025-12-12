@@ -14,17 +14,13 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- 2. DATA UNIVERSE (Parsing City/State) ---
+# --- 2. DATA UNIVERSE ---
 @st.cache_data
 def load_universe_data():
-    """
-    Fetches S&P 500 data and parses Location into City/State.
-    """
     try:
         url = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/master/data/constituents.csv"
         df = pd.read_csv(url)
         
-        # 1. Standardize Column Names
         df = df.rename(columns={
             "Symbol": "Ticker",
             "Security": "Name",
@@ -33,14 +29,11 @@ def load_universe_data():
             "Headquarters Location": "Location"
         })
         
-        # 2. Parse "Location" (Format: "City, State")
         location_split = df['Location'].str.split(', ', n=1, expand=True)
         df['City'] = location_split[0]
         df['State'] = location_split[1] if 1 in location_split.columns else None
         
-        # Drop unnecessary columns
         df = df.drop(columns=['Location', 'Founded', 'CIK', 'Date added'], errors='ignore')
-        
         return df
     except Exception as e:
         st.error(f"Data Connection Failed: {e}")
@@ -53,6 +46,33 @@ def load_analysis(ticker):
         return raw, run_quant_analysis(raw)
     return None, None
 
+# --- NEW: SMART SUMMARY GENERATOR ---
+def generate_smart_summary(info):
+    """
+    Creates a concise 2-sentence summary using available metadata.
+    """
+    name = info.get('shortName', 'The company')
+    industry = info.get('industry', 'various sectors')
+    city = info.get('city', 'Unknown City')
+    country = info.get('country', 'Unknown Country')
+    full_summary = info.get('longBusinessSummary', '')
+    
+    # 1. Create the "Identity" Sentence
+    intro = f"**{name}** is a major player in the **{industry}** sector, based in **{city}, {country}**."
+    
+    # 2. Extract the "Action" Sentence (First 2 sentences of the real summary)
+    # We split by '. ' to find sentence boundaries.
+    if full_summary:
+        sentences = full_summary.split('. ')
+        # Take first 2 sentences and add a period back if needed
+        short_desc = ". ".join(sentences[:2])
+        if not short_desc.endswith('.'):
+            short_desc += "."
+    else:
+        short_desc = "No detailed business description available."
+        
+    return f"{intro} {short_desc}"
+
 # --- 3. MAIN LOGIC ---
 df_universe = load_universe_data()
 
@@ -64,47 +84,31 @@ if st.session_state.selected_ticker is None:
     st.title("⚡ Market Terminal")
     st.caption("Select a company from the grid to launch deep analysis.")
 
-    # --- DYNAMIC CASCADING FILTERS ---
-    # We filter the dataframe step-by-step to update the options for the next dropdown
-    
     st.subheader("Filter Market")
     
-    # 1. SECTOR FILTER (Base Level)
+    # Dynamic Filters
     available_sectors = sorted(df_universe['Sector'].dropna().unique())
     c1, c2, c3, c4 = st.columns(4)
     
     with c1:
         selected_sectors = st.multiselect("Sector", options=available_sectors, placeholder="All Sectors")
-        
-        # Filter step 1
         df_step1 = df_universe[df_universe['Sector'].isin(selected_sectors)] if selected_sectors else df_universe
 
-    # 2. INDUSTRY FILTER (Dependent on Sector)
     available_industries = sorted(df_step1['Industry'].dropna().unique())
     with c2:
         selected_industries = st.multiselect("Industry", options=available_industries, placeholder="All Industries")
-        
-        # Filter step 2
         df_step2 = df_step1[df_step1['Industry'].isin(selected_industries)] if selected_industries else df_step1
 
-    # 3. STATE FILTER (Dependent on Industry)
     available_states = sorted(df_step2['State'].dropna().unique())
     with c3:
         selected_states = st.multiselect("State", options=available_states, placeholder="All States")
-        
-        # Filter step 3
         df_step3 = df_step2[df_step2['State'].isin(selected_states)] if selected_states else df_step2
 
-    # 4. CITY FILTER (Dependent on State)
     available_cities = sorted(df_step3['City'].dropna().unique())
     with c4:
         selected_cities = st.multiselect("City", options=available_cities, placeholder="All Cities")
-        
-        # Final Filter
         filtered_df = df_step3[df_step3['City'].isin(selected_cities)] if selected_cities else df_step3
 
-    # --- SEARCH OVERRIDE ---
-    # Search box applies on top of the filters
     search_query = st.text_input("Search Ticker or Name", placeholder="e.g. Nvidia...")
     if search_query:
         filtered_df = filtered_df[
@@ -112,7 +116,6 @@ if st.session_state.selected_ticker is None:
             filtered_df['Name'].str.contains(search_query, case=False)
         ]
 
-    # --- INTERACTIVE DATA TABLE ---
     st.markdown(f"**Found {len(filtered_df)} companies**")
     
     selection = st.dataframe(
@@ -139,7 +142,7 @@ if st.session_state.selected_ticker is None:
         st.session_state.selected_ticker = ticker_symbol
         st.rerun()
 
-# --- VIEW 2: THE DEEP DIVE DASHBOARD (Unchanged) ---
+# --- VIEW 2: THE DEEP DIVE DASHBOARD ---
 else:
     ticker = st.session_state.selected_ticker
     
@@ -159,6 +162,10 @@ else:
         info = raw_data['info']
         metrics = analysis['metrics']
         
+        # --- NEW: SMART SUMMARY SECTION ---
+        # We display it in a nice info box right under the title
+        st.info(generate_smart_summary(info), icon="ℹ️")
+
         # --- METRICS ---
         with st.container():
             k1, k2, k3, k4 = st.columns(4)
