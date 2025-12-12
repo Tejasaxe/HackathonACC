@@ -6,6 +6,7 @@ from plotly.subplots import make_subplots
 # IMPORT YOUR MODULES
 from fetch_data import get_raw_data
 from analysis import run_quant_analysis
+from ai_insights import get_ai_long_term_analysis, get_news_sentiment
 
 # --- 1. SETUP: PROFESSIONAL UI CONFIG ---
 st.set_page_config(
@@ -68,6 +69,12 @@ def generate_smart_summary(info):
 # --- 3. MAIN LOGIC ---
 df_universe = load_universe_data()
 
+# --- SIDEBAR: GROQ KEY ---
+with st.sidebar:
+    st.header("⚙️ Settings")
+    groq_key = st.text_input("Groq API Key", type="password", help="Get it free at console.groq.com")
+    st.caption("Powered by Llama 3 via Groq ⚡")
+
 if 'selected_ticker' not in st.session_state:
     st.session_state.selected_ticker = None
 
@@ -76,55 +83,60 @@ if st.session_state.selected_ticker is None:
     st.title("⚡ Market Terminal")
     st.caption("Select a company from the grid to launch deep analysis.")
 
-   # --- CASCADING FILTERS ---
+    # --- CASCADING FILTERS (FIXED LOGIC) ---
     st.subheader("Filter Market")
     
-    # Create the 4 layout columns first
     c1, c2, c3, c4 = st.columns(4)
 
-    # --- STEP 1: SECTOR ---
+    # 1. Sector
     available_sectors = sorted(df_universe['Sector'].dropna().unique())
     with c1:
         selected_sectors = st.multiselect("Sector", options=available_sectors, placeholder="All Sectors")
     
-    # Calculate df_step1 immediately after input
     if selected_sectors:
         df_step1 = df_universe[df_universe['Sector'].isin(selected_sectors)]
     else:
         df_step1 = df_universe
 
-    # --- STEP 2: INDUSTRY ---
+    # 2. Industry
     available_industries = sorted(df_step1['Industry'].dropna().unique())
     with c2:
         selected_industries = st.multiselect("Industry", options=available_industries, placeholder="All Industries")
     
-    # Calculate df_step2 immediately
     if selected_industries:
         df_step2 = df_step1[df_step1['Industry'].isin(selected_industries)]
     else:
         df_step2 = df_step1
 
-    # --- STEP 3: STATE ---
+    # 3. State
     available_states = sorted(df_step2['State'].dropna().unique())
     with c3:
         selected_states = st.multiselect("State", options=available_states, placeholder="All States")
     
-    # Calculate df_step3 immediately
     if selected_states:
         df_step3 = df_step2[df_step2['State'].isin(selected_states)]
     else:
         df_step3 = df_step2
 
-    # --- STEP 4: CITY ---
+    # 4. City
     available_cities = sorted(df_step3['City'].dropna().unique())
     with c4:
         selected_cities = st.multiselect("City", options=available_cities, placeholder="All Cities")
     
-    # Calculate Final Filtered Dataframe
     if selected_cities:
         filtered_df = df_step3[df_step3['City'].isin(selected_cities)]
     else:
         filtered_df = df_step3
+
+    # --- SEARCH OVERRIDE ---
+    search_query = st.text_input("Search Ticker or Name", placeholder="e.g. Nvidia...")
+    if search_query:
+        filtered_df = filtered_df[
+            filtered_df['Ticker'].str.contains(search_query.upper()) | 
+            filtered_df['Name'].str.contains(search_query, case=False)
+        ]
+
+    st.markdown(f"**Found {len(filtered_df)} companies**")
     
     selection = st.dataframe(
         filtered_df,
@@ -164,7 +176,18 @@ else:
             st.markdown(f"## {ticker} Analysis")
             
     with st.spinner(f"Analyzing {ticker}..."):
-        raw_data, analysis = load_analysis(ticker)
+        raw_data = get_raw_data(ticker)
+        if raw_data:
+            analysis = run_quant_analysis(raw_data)
+            # Bundle for AI
+            ai_data_bundle = {
+                'info': raw_data['info'], 
+                'fundamentals': analysis['fundamentals'],
+                'valuation': analysis['valuation'],
+                'metrics': analysis['metrics']
+            }
+        else:
+            analysis = None
 
     if raw_data and analysis:
         info = raw_data['info']
@@ -233,7 +256,7 @@ else:
         )
         st.plotly_chart(fig, use_container_width=True)
 
-        # 5. FUNDAMENTAL DEEP DIVE (With New Growth Columns)
+        # 5. FUNDAMENTAL DEEP DIVE (3 Columns)
         st.subheader("📚 Fundamental Deep Dive")
         
         f_col1, f_col2, f_col3 = st.columns(3)
@@ -271,6 +294,41 @@ else:
                 ]
             })
             st.dataframe(df_growth, hide_index=True, use_container_width=True)
+
+        # 6. AI INTELLIGENCE CENTER (GROQ)
+        st.divider()
+        st.subheader("🧠 AI Intelligence Center")
+        
+        if not groq_key:
+            st.warning("⚠️ Enter your Groq API Key in the sidebar to unlock AI insights.")
+        else:
+            ai_col1, ai_col2 = st.columns(2)
+            
+            with ai_col1:
+                st.markdown("### 🦉 Long-Term Strategy")
+                with st.spinner("Consulting AI Analyst..."):
+                    strategy_text = get_ai_long_term_analysis(groq_key, ticker, ai_data_bundle)
+                    st.success(strategy_text)
+
+            with ai_col2:
+                st.markdown("### 📰 News Sentiment (24h)")
+                with st.spinner("Reading the news..."):
+                    headlines, sentiment_response = get_news_sentiment(groq_key, ticker)
+                    
+                    if headlines:
+                        if "POSITIVE" in sentiment_response:
+                            s_color = "green"
+                        elif "NEGATIVE" in sentiment_response:
+                            s_color = "red"
+                        else:
+                            s_color = "gray"
+                            
+                        st.markdown(f"**Verdict:** :{s_color}[{sentiment_response}]")
+                        
+                        with st.expander("Read analyzed headlines"):
+                            st.text(headlines)
+                    else:
+                        st.info("No news data available.")
 
     else:
         st.error("Could not fetch data. The ticker might be delisted or API is busy.")
