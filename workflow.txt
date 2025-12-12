@@ -1,1 +1,60 @@
-write smtng
+We  use `Streamlit` (which creates modern web apps in pure Python).
+
+---
+
+### Prototype 1: The "Logic Core" (CLI Script)
+**Goal:** Build the brain of the application. No GUI yet, just a Python script that proves you can get data and make a math-based decision.
+
+**Features:**
+* **Input Mechanism:** Simle console input (e.g., User types `NVDA` and hits Enter).
+* **Data Fetching (yfinance):**
+    * **Live Price:** Current market price.
+    * **Fundamental Data:** Trailing P/E, EPS (Earnings Per Share), Market Cap, and Sector.
+    * **Historical Data:** Last 200 days of closing prices (needed for the decision logic).
+* **The "Vibe" Algorithm (Decision Engine):**
+    * *Logic:* Calculate the **SMA-50** (50-day Simple Moving Average) and **SMA-200**.
+    * *Signal:*
+        * If SMA-50 > SMA-200 $\rightarrow$ **"Golden Cross" (BUY)**.
+        * If SMA-50 < SMA-200 $\rightarrow$ **"Death Cross" (SELL)**.
+* **Output:** A printed text summary in the terminal.
+
+**Why this is better:** You validate your math immediately without worrying about buttons or colors.
+
+
+
+---
+
+### Prototype 2: The "Alpha Dashboard" (Streamlit Web App)
+**Goal:** Give the brain a face. Create a browser-based dashboard where you can visualize the data.
+
+**Features:**
+* **Interface (Streamlit):**
+    * A clean sidebar search bar to enter Ticker symbols.
+    * A date picker to select the time range (1 year, 5 years, Max).
+* **Interactive Charts (Plotly):**
+    * **Candlestick Chart:** Shows Open, High, Low, Close prices interactively (zoom/pan).
+    * **Volume Chart:** Bar chart below prices to show trading activity.
+    * **Indicator Overlay:** Draw the SMA-50 and SMA-200 lines directly on top of the price chart so you can *see* the crossover happening.
+* **The KPI Scorecard:**
+    * A row of "Metric Cards" at the top displaying current Price, P/E Ratio, and Daily Change (Green for up, Red for down).
+* **The "Vibe Check" Box:**
+    * A dedicated section that prints the machine's verdict: *"RECOMMENDATION: STRONG BUY"* based on the logic from Prototype 1, highlighted in bold colors.
+
+**Why this is better:** Streamlit handles all the frontend code (HTML/CSS) for you. You just write Python, and it renders a website.
+
+---
+
+### Prototype 3: The "Market Screener" (The Expansion)
+**Goal:** Instead of looking at *one* company, look at *many* to find opportunities.
+
+**Features:**
+* **Pre-defined Lists:** Instead of searching one by one, have a dropdown for "S&P 500 Tech Stocks" or "Top 10 Crypto".
+* **The Screener Table:**
+    * Fetch data for 10–20 companies at once.
+    * Display a sortable table (dataframe) with columns: Ticker, Price, P/E, RSI, and "Vibe Score".
+    * **Feature:** Click a column header to sort (e.g., show me the Lowest P/E first).
+* **Comparison View:**
+    * Select two tickers (e.g., `GOOGL` vs `MSFT`) and plot their normalized performance on the same chart to see who is winning.
+* **Export Data:** A button to download the current analysis as a CSV file.
+
+**Why this is better:** This moves the tool from a "calculator" to a "discovery engine."
