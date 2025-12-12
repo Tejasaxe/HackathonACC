@@ -5,55 +5,72 @@ import streamlit as st
 def get_raw_data(ticker_symbol):
     """
     Fetches raw dataframes for the stock and the market (SPY).
-    Includes error handling and ticker sanitization.
+    Fully compatible with Global Markets (e.g., 'RELIANCE.NS', '0700.HK').
     """
-    # FIX: Yahoo Finance expects 'BRK-B' not 'BRK.B'
-    if "." in ticker_symbol:
-        ticker_symbol = ticker_symbol.replace(".", "-")
-
+    
+    # 1. Ticker Sanitization
+    # Yahoo Finance requires dashes for US dual-class stocks, but keeps dots for international suffixes.
+    # We fix the specific known US edge cases from the S&P 500 list.
+    if ticker_symbol == "BRK.B":
+         ticker_symbol = "BRK-B"
+    elif ticker_symbol == "BF.B":
+         ticker_symbol = "BF-B"
+    
     print(f"--- Fetching data for {ticker_symbol} ---")
     
     try:
         stock = yf.Ticker(ticker_symbol)
         
-        # 1. Price History
-        # We try to fetch 2 years of history for the chart and calculations
+        # 2. Price History (Chart & Volatility)
+        # We attempt to fetch 5 years of data for the 'Time Machine' and long-term charts.
         try:
-            stock_history = stock.history(period="2y")
+            stock_history = stock.history(period="5y")
+            
+            # Fallback 1: If 5y is empty (e.g., recent IPO), try 1 year.
             if stock_history.empty:
-                print(f"Warning: No history found for {ticker_symbol}")
+                print(f"Warning: 5y history empty for {ticker_symbol}, trying 1y...")
+                stock_history = stock.history(period="1y")
+                
+            # Fallback 2: If still empty, the ticker might be delisted or invalid.
+            if stock_history.empty:
+                print(f"Error: No history found for {ticker_symbol}")
                 return None
         except Exception as e:
             print(f"Error fetching history: {e}")
             return None
         
-        # 2. Market History (SPY) for Benchmarking (CAPM)
+        # 3. Market Benchmark (SPY)
+        # We use SPY as a global proxy for 'Market Risk' to calculate Beta.
+        # This ensures we always have a baseline, even for foreign stocks.
         try:
             spy = yf.Ticker("SPY")
-            market_history = spy.history(period="2y")
+            market_history = spy.history(period="5y")
         except Exception as e:
             print(f"Warning: Could not fetch SPY data ({e}). CAPM will be approximate.")
-            # Create dummy market data if SPY fails so app doesn't crash
+            # Fallback: Create a flat line 'market' so the app doesn't crash
             market_history = stock_history.copy()
-            market_history['Close'] = 1.0 # Flat market assumption fallback
+            market_history['Close'] = 1.0 
         
-        # 3. Financial Statements (with error handling)
+        # 4. Financial Statements (Balance Sheet, Cash Flow)
+        # Essential for Debt/Equity and Free Cash Flow metrics.
         try:
             balance_sheet = stock.balance_sheet
             cash_flow = stock.cashflow
             income_stmt = stock.financials
         except:
+            # Create empty DFs if data is missing (common for small intl. stocks)
             balance_sheet = pd.DataFrame()
             cash_flow = pd.DataFrame()
             income_stmt = pd.DataFrame()
         
-        # 4. Basic Info
-        # yfinance .info can sometimes fail or timeout
+        # 5. Basic Info (P/E, Description, Sector)
+        # The .info dictionary is rich but can occasionally timeout.
         try:
             info = stock.info
         except:
-            info = {"symbol": ticker_symbol} # Minimal fallback
+            info = {"symbol": ticker_symbol} # Minimal fallback to prevent crash
 
+        # 6. Return the Bundle
         return {
             "symbol": ticker_symbol,
             "info": info,

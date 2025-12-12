@@ -6,7 +6,6 @@ from plotly.subplots import make_subplots
 # IMPORT YOUR MODULES
 from fetch_data import get_raw_data
 from analysis import run_quant_analysis
-# IMPORT THE NEW FUNCTION
 from ai_insights import get_ai_long_term_analysis, fetch_raw_news, analyze_news_sentiment
 
 # --- 1. SETUP: PROFESSIONAL UI CONFIG ---
@@ -16,19 +15,40 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- 2. DATA UNIVERSE ---
+# --- 2. DATA UNIVERSE (LOCAL FILES) ---
 @st.cache_data
-def load_universe_data():
+def load_universe_data(market_choice):
+    """
+    Loads ticker data from local CSV files.
+    """
+    # Map the dropdown selection to your file names
+    files = {
+        "🇺🇸 S&P 500 (USA)": "sp500.csv",
+        "🇪🇺 STOXX 50 (Europe)": "stoxx50.csv",
+        "🇮🇳 Nifty 50 (India)": "nifty50.csv",
+    }
+    
+    filename = files.get(market_choice)
+    if not filename: return pd.DataFrame()
+
     try:
-        url = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/master/data/constituents.csv"
-        df = pd.read_csv(url)
-        df = df.rename(columns={"Symbol": "Ticker", "Security": "Name", "GICS Sector": "Sector", "GICS Sub-Industry": "Industry", "Headquarters Location": "Location"})
-        location_split = df['Location'].str.split(', ', n=1, expand=True)
-        df['City'] = location_split[0]
-        df['State'] = location_split[1] if 1 in location_split.columns else None
-        return df.drop(columns=['Location', 'Founded', 'CIK', 'Date added'], errors='ignore')
+        # Read the local CSV file
+        df = pd.read_csv(filename)
+        
+        # Ensure we have "City" and "State" columns (fill with N/A if missing)
+        if "City" not in df.columns: df["City"] = "N/A"
+        if "State" not in df.columns: df["State"] = "N/A"
+        
+        # Clean Tickers (remove any accidental whitespace)
+        df['Ticker'] = df['Ticker'].str.strip()
+        
+        return df
+
+    except FileNotFoundError:
+        st.error(f"Missing File: {filename}. Please download the CSV and place it in the app folder.")
+        return pd.DataFrame()
     except Exception as e:
-        st.error(f"Data Connection Failed: {e}")
+        st.error(f"Error loading {filename}: {e}")
         return pd.DataFrame()
 
 @st.cache_data
@@ -52,42 +72,58 @@ def generate_smart_summary(info):
     return f"{intro} {short_desc}"
 
 # --- 3. MAIN LOGIC ---
-df_universe = load_universe_data()
 
+# --- SIDEBAR: SETTINGS ---
 with st.sidebar:
     st.header("⚙️ Settings")
+    
+    # Market Selector
+    market_choice = st.selectbox(
+        "🌍 Market Universe", 
+        ["🇺🇸 S&P 500 (USA)", "🇪🇺 STOXX 50 (Europe)", "🇮🇳 Nifty 50 (India)"]
+    )
+    
+    st.divider()
+    
     groq_key = st.text_input("Groq API Key", type="password", help="Get it free at console.groq.com")
     st.caption("Powered by Llama 3 via Groq ⚡")
+
+# Load Data based on selection
+df_universe = load_universe_data(market_choice)
 
 if 'selected_ticker' not in st.session_state:
     st.session_state.selected_ticker = None
 
 # --- VIEW 1: SEARCH GRID ---
 if st.session_state.selected_ticker is None:
-    st.title("⚡ Market Terminal")
+    st.title(f"⚡ Market Terminal: {market_choice}")
     st.caption("Select a company from the grid to launch deep analysis.")
+
+    # --- FILTERS (Dynamic) ---
     st.subheader("Filter Market")
     
-    c1, c2, c3, c4 = st.columns(4)
-    available_sectors = sorted(df_universe['Sector'].dropna().unique())
-    with c1: selected_sectors = st.multiselect("Sector", options=available_sectors, placeholder="All Sectors")
-    df_step1 = df_universe[df_universe['Sector'].isin(selected_sectors)] if selected_sectors else df_universe
+    # Check if sectors exist in this dataset
+    has_sectors = "Sector" in df_universe.columns and df_universe['Sector'].iloc[0] != "N/A"
+    
+    if has_sectors:
+        c1, c2, c3, c4 = st.columns(4)
+        available_sectors = sorted(df_universe['Sector'].dropna().unique())
+        with c1: selected_sectors = st.multiselect("Sector", options=available_sectors, placeholder="All Sectors")
+        df_step1 = df_universe[df_universe['Sector'].isin(selected_sectors)] if selected_sectors else df_universe
 
-    available_industries = sorted(df_step1['Industry'].dropna().unique())
-    with c2: selected_industries = st.multiselect("Industry", options=available_industries, placeholder="All Industries")
-    df_step2 = df_step1[df_step1['Industry'].isin(selected_industries)] if selected_industries else df_step1
+        available_industries = sorted(df_step1['Industry'].dropna().unique())
+        with c2: selected_industries = st.multiselect("Industry", options=available_industries, placeholder="All Industries")
+        filtered_df = df_step1[df_step1['Industry'].isin(selected_industries)] if selected_industries else df_step1
+    else:
+        filtered_df = df_universe
 
-    available_states = sorted(df_step2['State'].dropna().unique())
-    with c3: selected_states = st.multiselect("State", options=available_states, placeholder="All States")
-    df_step3 = df_step2[df_step2['State'].isin(selected_states)] if selected_states else df_step2
-
-    available_cities = sorted(df_step3['City'].dropna().unique())
-    with c4: selected_cities = st.multiselect("City", options=available_cities, placeholder="All Cities")
-    filtered_df = df_step3[df_step3['City'].isin(selected_cities)] if selected_cities else df_step3
-
-    search_query = st.text_input("Search Ticker or Name", placeholder="e.g. Nvidia...")
+    # Search
+    search_query = st.text_input("Search Ticker or Name", placeholder="e.g. Reliance, SAP, Tencent...")
     if search_query:
-        filtered_df = filtered_df[filtered_df['Ticker'].str.contains(search_query.upper()) | filtered_df['Name'].str.contains(search_query, case=False)]
+        filtered_df = filtered_df[
+            filtered_df['Ticker'].str.contains(search_query.upper()) | 
+            filtered_df['Name'].str.contains(search_query, case=False)
+        ]
 
     st.markdown(f"**Found {len(filtered_df)} companies**")
     
@@ -174,13 +210,10 @@ else:
             st.markdown("🚀 **Growth & Income**")
             st.dataframe(pd.DataFrame({"Metric": ["Revenue Growth (YoY)", "Earnings Growth", "Dividend Yield", "Payout Ratio"], "Value": [analysis['fundamentals']['Revenue Growth'], f"{info.get('earningsGrowth', 0)*100:.1f}%" if info.get('earningsGrowth') else "N/A", analysis['fundamentals']['Dividend Yield'], f"{info.get('payoutRatio', 0)*100:.1f}%" if info.get('payoutRatio') else "N/A"]}), hide_index=True, use_container_width=True)
 
-        # --- AI INTELLIGENCE & NEWS FEED ---
         st.divider()
         st.subheader("🧠 AI Intelligence Center")
         
         ai_col1, ai_col2 = st.columns(2)
-        
-        # 1. Strategy Column
         with ai_col1:
             st.markdown("### 🦉 Long-Term Strategy")
             if not groq_key: st.warning("⚠️ Enter Groq API Key for Strategy")
@@ -188,48 +221,27 @@ else:
                 with st.spinner("Consulting AI Analyst..."):
                     strategy_text = get_ai_long_term_analysis(groq_key, ticker, ai_data_bundle)
                     st.success(strategy_text)
-
-        # 2. News Column (Scraping)
         with ai_col2:
             st.markdown("### 📰 Live News Feed (Past 24h)")
             st.caption("Raw data scraped from DuckDuckGo")
-            
             with st.spinner("Scraping the web..."):
                 raw_headlines = fetch_raw_news(ticker)
-                
                 if raw_headlines:
                     with st.container(height=300):
                         for news_item in raw_headlines:
                             st.markdown(news_item)
                             st.divider()
-                else:
-                    st.warning(f"No news found for {ticker} in the last 24h.")
+                else: st.warning(f"No news found for {ticker} in the last 24h.")
         
-        # --- NEW: SENTIMENT VERDICT ROW (Bottom) ---
         if raw_headlines and groq_key:
             st.divider()
             st.subheader("🤖 AI Sentiment Verdict")
-            
             with st.spinner("Analyzing Sentiment from Headlines..."):
                 sentiment_result = analyze_news_sentiment(groq_key, ticker, raw_headlines)
-                
-                # Check sentiment to assign color
-                if "POSITIVE" in sentiment_result:
-                    s_color = "green"
-                    s_icon = "🚀"
-                elif "NEGATIVE" in sentiment_result:
-                    s_color = "red"
-                    s_icon = "📉"
-                else:
-                    s_color = "gray"
-                    s_icon = "😐"
-                
-                # Display in a big visible box
-                st.markdown(f"""
-                <div style="padding: 20px; border-radius: 10px; border: 1px solid #333; background-color: #0e1117; text-align: center;">
-                    <h2 style='color: {s_color}; margin:0;'>{s_icon} {sentiment_result}</h2>
-                </div>
-                """, unsafe_allow_html=True)
+                if "POSITIVE" in sentiment_result: s_color, s_icon = "green", "🚀"
+                elif "NEGATIVE" in sentiment_result: s_color, s_icon = "red", "📉"
+                else: s_color, s_icon = "gray", "😐"
+                st.markdown(f"""<div style="padding: 20px; border-radius: 10px; border: 1px solid #333; background-color: #0e1117; text-align: center;"><h2 style='color: {s_color}; margin:0;'>{s_icon} {sentiment_result}</h2></div>""", unsafe_allow_html=True)
         elif raw_headlines and not groq_key:
             st.info("ℹ️ Enter Groq API Key to see the Sentiment Verdict for this news.")
 

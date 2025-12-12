@@ -1,0 +1,50 @@
+Ticker,Name,Sector,Industry
+RELIANCE.NS,Reliance Industries,Energy,Oil & Gas
+TCS.NS,Tata Consultancy Services,Technology,IT Services
+HDFCBANK.NS,HDFC Bank,Financials,Banks
+ICICIBANK.NS,ICICI Bank,Financials,Banks
+BHARTIARTL.NS,Bharti Airtel,Communication Services,Telecom
+INFY.NS,Infosys,Technology,IT Services
+ITC.NS,ITC Limited,Consumer Staples,Tobacco
+SBIN.NS,State Bank of India,Financials,Banks
+LICI.NS,Life Insurance Corp,Financials,Insurance
+HINDUNILVR.NS,Hindustan Unilever,Consumer Staples,Household Products
+LT.NS,Larsen & Toubro,Industrials,Construction
+BAJFINANCE.NS,Bajaj Finance,Financials,Credit Services
+MARUTI.NS,Maruti Suzuki,Consumer Discretionary,Auto Manufacturers
+HCLTECH.NS,HCL Technologies,Technology,IT Services
+SUNPHARMA.NS,Sun Pharma,Healthcare,Drug Manufacturers
+TATAMOTORS.NS,Tata Motors,Consumer Discretionary,Auto Manufacturers
+ULTRACEMCO.NS,UltraTech Cement,Materials,Building Materials
+AXISBANK.NS,Axis Bank,Financials,Banks
+NTPC.NS,NTPC Limited,Utilities,Electric Utilities
+TITAN.NS,Titan Company,Consumer Discretionary,Luxury Goods
+ASIANPAINT.NS,Asian Paints,Materials,Building Materials
+ADANIENT.NS,Adani Enterprises,Industrials,Conglomerates
+ADANIPORTS.NS,Adani Ports,Industrials,Marine
+KOTAKBANK.NS,Kotak Mahindra Bank,Financials,Banks
+MAHM.NS,Mahindra & Mahindra,Consumer Discretionary,Auto Manufacturers
+ONGC.NS,ONGC,Energy,Oil & Gas
+COALINDIA.NS,Coal India,Energy,Thermal Coal
+WIPRO.NS,Wipro,Technology,IT Services
+POWERGRID.NS,Power Grid Corp,Utilities,Electric Utilities
+BAJAJFINSV.NS,Bajaj Finserv,Financials,Insurance
+JSWSTEEL.NS,JSW Steel,Materials,Steel
+TATASTEEL.NS,Tata Steel,Materials,Steel
+GRASIM.NS,Grasim Industries,Materials,Building Materials
+TECHM.NS,Tech Mahindra,Technology,IT Services
+HINDALCO.NS,Hindalco Industries,Materials,Aluminum
+NESTLEIND.NS,Nestle India,Consumer Staples,Packaged Foods
+INDUSINDBK.NS,IndusInd Bank,Financials,Banks
+DRREDDY.NS,Dr. Reddy's Labs,Healthcare,Drug Manufacturers
+CIPLA.NS,Cipla,Healthcare,Drug Manufacturers
+BPCL.NS,Bharat Petroleum,Energy,Oil & Gas
+SBILIFE.NS,SBI Life Insurance,Financials,Insurance
+BRITANNIA.NS,Britannia Industries,Consumer Staples,Packaged Foods
+APOLLOHOSP.NS,Apollo Hospitals,Healthcare,Healthcare Facilities
+EICHERMOT.NS,Eicher Motors,Consumer Discretionary,Auto Manufacturers
+DIVISLAB.NS,Divi's Laboratories,Healthcare,Drug Manufacturers
+TATACONSUM.NS,Tata Consumer Products,Consumer Staples,Packaged Foods
+BAJAJ-AUTO.NS,Bajaj Auto,Consumer Discretionary,Auto Manufacturers
+HEROMOTOCO.NS,Hero MotoCorp,Consumer Discretionary,Auto Manufacturers
+UPL.NS,UPL Limited,Materials,Agricultural Chemicals
