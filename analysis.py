@@ -3,87 +3,104 @@ import numpy as np
 
 def run_quant_analysis(data):
     """
-    Takes raw data and calculates CAPM, Technicals, and Fundamental ratios.
+    Calculates technicals, fundamental valuation, and generates a verdict.
     """
     if not data:
         return None
 
     stock_df = data['stock_history']
     market_df = data['market_history']
-    bs = data['balance_sheet']
-    cf = data['cash_flow']
+    info = data['info']
     
-    # --- 1. CAPM & RISK METRICS ---
-    # Align dates and calculate daily % returns
-    prices = pd.DataFrame({
-        'Stock': stock_df['Close'],
-        'Market': market_df['Close']
-    }).dropna()
-    
+    # --- 1. CAPM & RISK ---
+    prices = pd.DataFrame({'Stock': stock_df['Close'], 'Market': market_df['Close']}).dropna()
     returns = prices.pct_change().dropna()
     
-    # Covariance Matrix to find Beta
-    # Beta = Cov(Stock, Market) / Var(Market)
-    covariance_matrix = returns.cov()
-    cov_stock_market = covariance_matrix.loc['Stock', 'Market']
-    market_variance = returns['Market'].var()
+    cov = returns.cov()
+    beta = cov.loc['Stock', 'Market'] / returns['Market'].var()
     
-    beta = cov_stock_market / market_variance
-    
-    # Annualized Volatility (Standard Deviation * sqrt(252 trading days))
-    volatility = returns['Stock'].std() * np.sqrt(252)
-    
-    # Expected Return (CAPM) -> E(R) = Rf + Beta(Rm - Rf)
-    # Assumption: Risk Free (Rf) = 4% (0.04), Market Return (Rm) = 10% (0.10)
-    rf = 0.04
-    rm = 0.10
+    # CAPM Formula: R = Rf + Beta * (Rm - Rf)
+    rf = 0.045  # 4.5% Risk Free Rate (approx 10y Treasury)
+    rm = 0.10   # 10% Expected Market Return
     expected_return = rf + beta * (rm - rf)
+    
+    volatility = returns['Stock'].std() * np.sqrt(252)
 
-    # --- 2. TECHNICALS ---
-    # Simple Moving Averages
+    # --- 2. TECHNICAL SIGNALS ---
     stock_df['SMA_50'] = stock_df['Close'].rolling(window=50).mean()
     stock_df['SMA_200'] = stock_df['Close'].rolling(window=200).mean()
     
-    # Last Price vs SMA
-    current_price = stock_df['Close'].iloc[-1]
+    curr_price = stock_df['Close'].iloc[-1]
     sma_50 = stock_df['SMA_50'].iloc[-1]
     sma_200 = stock_df['SMA_200'].iloc[-1]
     
-    signal = "NEUTRAL"
+    # Vibe Signal Logic
     if sma_50 > sma_200:
-        signal = "BULLISH (Golden Cross)"
-    if sma_50 < sma_200:
-        signal = "BEARISH (Death Cross)"
+        trend = "BULLISH"
+        trend_desc = "Uptrend (Green > Red)"
+    else:
+        trend = "BEARISH"
+        trend_desc = "Downtrend (Green < Red)"
 
-    # --- 3. FUNDAMENTALS (Safe Handling) ---
-    # We use .get() or try/except because financial statements vary wildly by company
-    try:
-        # Free Cash Flow = Operating Cash Flow + Capital Expenditure
-        # Note: CapEx is usually negative in cash flow statements
-        operating_cash_flow = cf.loc['Operating Cash Flow'].iloc[0] # Most recent year
-        capex = cf.loc['Capital Expenditure'].iloc[0] 
-        fcf = operating_cash_flow + capex
-    except:
-        fcf = None
+    # --- 3. VALUATION (Price vs Expected) ---
+    target_price = info.get('targetMeanPrice')
+    
+    # If no analyst target, assume fair value is current price (neutral)
+    if target_price:
+        upside = (target_price - curr_price) / curr_price
+    else:
+        target_price = curr_price
+        upside = 0
 
-    try:
-        # Debt to Equity
-        total_debt = bs.loc['Total Debt'].iloc[0]
-        total_equity = bs.loc['Stockholders Equity'].iloc[0]
-        debt_to_equity = total_debt / total_equity
-    except:
-        debt_to_equity = None
+    # --- 4. THE VERDICT (Long/Short/Hold) ---
+    # Logic: Combine Technicals (Trend) + Fundamentals (Valuation)
+    
+    verdict = "HOLD"
+    color = "yellow"
+    
+    if trend == "BULLISH" and upside > 0.10:
+        verdict = "LONG (BUY)" # Rising trend + Cheap
+        color = "green"
+    elif trend == "BEARISH" and upside < -0.10:
+        verdict = "SHORT (SELL)" # Falling trend + Expensive
+        color = "red"
+    elif trend == "BULLISH":
+        verdict = "WATCH (Momentum Up)"
+        color = "blue"
+    elif trend == "BEARISH":
+        verdict = "AVOID (Momentum Down)"
+        color = "orange"
+
+    # --- 5. POSITION SIZING (Money Management) ---
+    # Rule of Thumb: Lower Volatility = Higher Allocation
+    if volatility < 0.20:
+        allocation = "High (5-7%)" # Safe stock (e.g. Coke)
+    elif volatility < 0.40:
+        allocation = "Medium (3-5%)" # Standard stock (e.g. Apple)
+    elif volatility < 0.60:
+        allocation = "Low (1-2%)" # Risky (e.g. Tesla)
+    else:
+        allocation = "Speculative (<1%)" # Crypto/Penny stocks
 
     return {
         "metrics": {
             "Beta": round(beta, 2),
-            "Volatility (Ann.)": f"{round(volatility * 100, 1)}%",
-            "Expected Return (CAPM)": f"{round(expected_return * 100, 1)}%",
-            "Signal": signal
+            "Volatility": f"{round(volatility * 100, 1)}%",
+            "Expected Return": f"{round(expected_return * 100, 1)}%",
+            "Signal": trend,
+            "Signal Desc": trend_desc
         },
+        "valuation": {
+            "Current Price": curr_price,
+            "Target Price": target_price,
+            "Upside": upside,  # float (e.g. 0.15 for 15%)
+            "Verdict": verdict,
+            "Verdict Color": color,
+            "Allocation": allocation
+        },
+        "history": stock_df,
         "fundamentals": {
-            "Free Cash Flow": f"${fcf:,.0f}" if fcf else "N/A",
-            "Debt/Equity Ratio": round(debt_to_equity, 2) if debt_to_equity else "N/A"
-        },
-        "history": stock_df # Return dataframe with added SMA columns for plotting
+            "Free Cash Flow": info.get('freeCashflow'),
+            "Debt/Equity": info.get('debtToEquity')
+        }
     }

@@ -161,40 +161,95 @@ else:
     if raw_data and analysis:
         info = raw_data['info']
         metrics = analysis['metrics']
+        val = analysis['valuation']
         
-        # --- NEW: SMART SUMMARY SECTION ---
-        # We display it in a nice info box right under the title
+        # --- SMART SUMMARY ---
         st.info(generate_smart_summary(info), icon="ℹ️")
 
-        # --- METRICS ---
-        with st.container():
-            k1, k2, k3, k4 = st.columns(4)
-            k1.metric("Price", f"${info.get('currentPrice', 0):.2f}", 
-                      delta=f"{info.get('recommendationKey', '').upper()}")
-            k2.metric("Beta", metrics['Beta'], help="Market Risk (1.0 = Market)")
-            k3.metric("Exp. Return (CAPM)", metrics['Expected Return (CAPM)'])
-            k4.metric("Vibe Signal", metrics['Signal'], 
-                      delta_color="normal" if "HOLD" in metrics['Signal'] else "inverse")
+        # --- THE VERDICT (New Section) ---
+        # We create a highlighted box for the final decision
+        st.subheader("🤖 The Robo-Verdict")
+        
+        v_col1, v_col2, v_col3 = st.columns(3)
+        
+        # 1. Action
+        v_col1.metric("Recommendation", val['Verdict'], 
+                      delta=metrics['Signal Desc'], delta_color="off")
+        
+        # 2. Valuation Gap
+        upside_val = val['Upside'] * 100
+        v_col2.metric("Fair Value Gap", f"{upside_val:.1f}%", 
+                      help=f"Analyst Target: ${val['Target Price']}",
+                      delta="Undervalued" if upside_val > 0 else "Overvalued")
+        
+        # 3. Money Management
+        v_col3.metric("Recommended Size", val['Allocation'], 
+                      help="Based on Asset Volatility. Lower Volatility = Higher Size.")
 
         st.divider()
 
+        # --- METRICS ROW ---
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("Price", f"${info.get('currentPrice', 0):.2f}")
+        k2.metric("Beta (Risk)", metrics['Beta'])
+        k3.metric("Req. Return (CAPM)", metrics['Expected Return'])
+        k4.metric("Trend", metrics['Signal']) # Just Bullish/Bearish now
+
         # --- PLOTLY CHART ---
+        st.subheader("Technical Chart")
         hist = analysis['history'].tail(300)
+        
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
                             vertical_spacing=0.03, row_heights=[0.75, 0.25])
 
-        fig.add_trace(go.Scatter(x=hist.index, y=hist['Close'], name='Price',
-            line=dict(color='#00CCFF', width=2.5)), row=1, col=1)
-        fig.add_trace(go.Scatter(x=hist.index, y=hist['SMA_50'], name='SMA 50', line=dict(color='#00FF00', width=1)), row=1, col=1)
-        fig.add_trace(go.Scatter(x=hist.index, y=hist['SMA_200'], name='SMA 200', line=dict(color='#FF0055', width=1)), row=1, col=1)
-        fig.add_trace(go.Bar(x=hist.index, y=hist['Volume'], name='Volume', marker_color='rgba(255, 255, 255, 0.2)'), row=2, col=1)
+        # Price Line
+        fig.add_trace(go.Scatter(
+            x=hist.index, y=hist['Close'], name='Price',
+            line=dict(color='#00CCFF', width=2) 
+        ), row=1, col=1)
 
-        fig.update_layout(height=600, template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-            hovermode="x unified", xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=10, b=10))
+        # SMAs (Added specific tooltips)
+        fig.add_trace(go.Scatter(
+            x=hist.index, y=hist['SMA_50'], name='50-Day Avg (Fast)', 
+            line=dict(color='#00FF00', width=1)
+        ), row=1, col=1)
+        
+        fig.add_trace(go.Scatter(
+            x=hist.index, y=hist['SMA_200'], name='200-Day Avg (Slow)', 
+            line=dict(color='#FF0055', width=1)
+        ), row=1, col=1)
+
+        # Volume
+        fig.add_trace(go.Bar(
+            x=hist.index, y=hist['Volume'], name='Volume',
+            marker_color='rgba(255, 255, 255, 0.2)'
+        ), row=2, col=1)
+
+        fig.update_layout(
+            height=600,
+            template="plotly_dark",
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            hovermode="x unified",
+            xaxis_rangeslider_visible=False,
+            margin=dict(l=10, r=10, t=10, b=10),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
         st.plotly_chart(fig, use_container_width=True)
+        
+        # Help Text for Chart
+        with st.expander("🎓 How to read this chart"):
+            st.write("""
+            * **Blue Line:** The actual price.
+            * **Green Line (50-Day):** The short-term trend.
+            * **Red Line (200-Day):** The long-term trend.
+            * **Buy Signal:** When Green crosses ABOVE Red.
+            * **Sell Signal:** When Green crosses BELOW Red.
+            """)
 
         # --- FUNDAMENTALS ---
         st.subheader("📚 Fundamental Data")
+        # [Keep your previous fundamental tables code here]
         f_col1, f_col2 = st.columns([1, 1])
         with f_col1:
             df_val = pd.DataFrame({
@@ -204,15 +259,20 @@ else:
             st.dataframe(df_val, hide_index=True, use_container_width=True)
             
         with f_col2:
+            # Safe parsing for percentages
+            roe = info.get('returnOnEquity')
+            pm = info.get('profitMargins')
+            
             df_health = pd.DataFrame({
                 "Metric": ["Free Cash Flow", "Debt/Equity", "Return on Equity", "Profit Margin"],
                 "Value": [
-                    analysis['fundamentals']['Free Cash Flow'], 
-                    analysis['fundamentals']['Debt/Equity Ratio'],
-                    f"{info.get('returnOnEquity', 0)*100:.2f}%" if info.get('returnOnEquity') else "N/A",
-                    f"{info.get('profitMargins', 0)*100:.2f}%" if info.get('profitMargins') else "N/A"
+                    f"${info.get('freeCashflow', 0)/1e9:.2f}B" if info.get('freeCashflow') else "N/A", 
+                    info.get('debtToEquity'),
+                    f"{roe*100:.2f}%" if roe else "N/A",
+                    f"{pm*100:.2f}%" if pm else "N/A"
                 ]
             })
             st.dataframe(df_health, hide_index=True, use_container_width=True)
+
     else:
         st.error("Could not fetch data.")
