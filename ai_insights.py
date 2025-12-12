@@ -1,5 +1,3 @@
-
-#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
 import os
 from groq import Groq 
 import yfinance as yf
