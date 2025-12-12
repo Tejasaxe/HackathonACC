@@ -1,0 +1,11 @@
+financial-statement-analyzer/
+├── data/
+│   └── raw_statements/  # Folder for storing input PDFs/Excel files
+├── src/
+│   ├── components/      # Reusable Streamlit UI components (e.g., sidebars, tabs)
+│   ├── core/            # Core business logic (KPI calculations)
+│   ├── parsing/         # Statement parsing logic (PDF/Excel -> DataFrames)
+│   └── utils/           # Utility functions (e.g., file handling, data cleaning)
+├── app.py               # Main Streamlit application file
+├── requirements.txt     # List of required Python packages
+└── README.md            # Project description and setup instructions
