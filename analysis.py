@@ -86,18 +86,23 @@ def run_quant_analysis(data):
     elif trend == "RECOVERY":
         verdict = "WATCH FOR ENTRY"
 
-    # --- 5. POSITION SIZING ---
+# --- 5. RISK PROFILE & SIZING ---
+    # We categorize the volatility into clear "Risk Levels"
     if volatility < 0.20:
+        risk_level = "Conservative (Low Risk)"
         allocation = "High (5-7%)"
     elif volatility < 0.40:
-        allocation = "Medium (3-5%)"
+        risk_level = "Moderate (Medium Risk)"
+        allocation = "Standard (3-5%)"
     elif volatility < 0.60:
+        risk_level = "Aggressive (High Risk)"
         allocation = "Low (1-2%)"
     else:
-        allocation = "Speculative (<1%)"
+        risk_level = "Speculative (Very High Risk)"
+        allocation = "Minimal (<1%)"
 
     return {
-        "metrics": {
+                "metrics": {
             "Beta": round(beta, 2),
             "Volatility": f"{round(volatility * 100, 1)}%",
             "Expected Return": f"{round(expected_return * 100, 1)}%",
@@ -105,6 +110,11 @@ def run_quant_analysis(data):
             "Signal Desc": trend_desc
         },
         "valuation": {
+            # ... (keep other valuation keys) ...
+            "Risk Level": risk_level,    # <--- NEW KEY
+            "Allocation": allocation     # <--- KEEPING THIS FOR TOOLTIP
+        },
+                "valuation": {
             "Current Price": curr_price,
             "Target Price": target_price,
             "Upside": upside,

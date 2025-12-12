@@ -187,8 +187,6 @@ else:
         v_col2.metric("Fair Value Gap", f"{upside_val:.1f}%", 
                       help=f"Analyst Target: ${val['Target Price']}",
                       delta="Undervalued" if upside_val > 0 else "Overvalued")
-        
-        v_col3.metric("Recommended Size", val['Allocation'])
 
         st.divider()
 
@@ -196,7 +194,7 @@ else:
         k1, k2, k3, k4 = st.columns(4)
         k1.metric("Price", f"${info.get('currentPrice', 0):.2f}")
         k2.metric("Beta (Risk)", metrics['Beta'])
-        k3.metric("Req. Return (CAPM)", metrics['Expected Return'])
+        k3.metric("Exp. Return (Ann.)", metrics['Expected Return'], help="Expected Annual Return based on CAPM model")
         k4.metric("Trend", metrics['Signal']) # Just Bullish/Bearish now
 
         # --- PLOTLY CHART ---
